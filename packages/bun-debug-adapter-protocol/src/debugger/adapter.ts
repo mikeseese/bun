@@ -7,7 +7,8 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { Location, SourceMap } from "./sourcemap";
 import { EventEmitter } from "node:events";
-import { UnixSignal, randomUnixPath } from "./signal";
+import { DebugSignal, randomUnixPath } from "./signal";
+import { type as getOSType } from "node:os";
 
 const capabilities: DAP.Capabilities = {
   supportsConfigurationDoneRequest: true,
@@ -196,6 +197,8 @@ const isDebug = process.env.NODE_ENV === "development";
 const debugSilentEvents = new Set(["Adapter.event", "Inspector.event"]);
 
 let threadId = 1;
+
+export const DefaultWebSocketDebugPort = 6499;
 
 export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements IDebugAdapter {
   #threadId: number;
@@ -489,8 +492,15 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
           ...env,
         };
 
-    const url = `ws+unix://${randomUnixPath()}`;
-    const signal = new UnixSignal();
+    let url: string;
+
+    if (getOSType() === "Windows_NT") {
+      url = `ws://localhost:${DefaultWebSocketDebugPort}`;
+    } else {
+      url = `ws+unix://${randomUnixPath()}`;
+    }
+
+    const signal = new DebugSignal();
 
     signal.on("Signal.received", () => {
       this.#attach({ url });
@@ -508,6 +518,8 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
     processEnv["FORCE_COLOR"] = "1";
     processEnv["BUN_QUIET_DEBUG_LOGS"] = "1";
     processEnv["BUN_DEBUG_QUIET_LOGS"] = "1";
+
+    await signal.ready;
 
     const started = await this.#spawn({
       command: runtime,
@@ -1327,7 +1339,7 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
     // 1. If it has a `path`, the client retrieves the source from the file system.
     // 2. If it has a `sourceReference`, the client sends a `source` request.
     //    Moreover, the code is usually shown in a read-only editor.
-    const isUserCode = url.startsWith("/");
+    const isUserCode = url.startsWith("/") || /^[a-z]:/i.test(url);
     const sourceMap = SourceMap(sourceMapURL);
     const name = sourceName(url);
     const presentationHint = sourcePresentationHint(url);

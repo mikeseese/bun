@@ -28,11 +28,13 @@ export default function (
     Bun.write(Bun.stderr, dim("--------------------- Bun Inspector ---------------------") + reset() + "\n");
   }
 
-  const unix = process.env["BUN_INSPECT_NOTIFY"];
-  if (unix) {
-    const { protocol, pathname } = parseUrl(unix);
+  const inspectNotifyUrl = process.env["BUN_INSPECT_NOTIFY"];
+  if (inspectNotifyUrl) {
+    const { protocol, pathname } = parseUrl(inspectNotifyUrl);
     if (protocol === "unix:") {
-      notify(pathname);
+      notifyUnixSocket(pathname);
+    } else if (protocol === "ws:") {
+      notifyWebSocket(inspectNotifyUrl);
     }
   }
 }
@@ -321,7 +323,7 @@ function reset(): string {
   return "";
 }
 
-function notify(unix: string): void {
+function notifyUnixSocket(unix: string): void {
   Bun.connect({
     unix,
     socket: {
@@ -332,6 +334,14 @@ function notify(unix: string): void {
     },
   }).finally(() => {
     // Best-effort
+  });
+}
+
+function notifyWebSocket(url: string): void {
+  const socket = new WebSocket(url);
+  socket.addEventListener("open", event => {
+    socket.send("1");
+    socket.close();
   });
 }
 

@@ -1704,16 +1704,19 @@ pub const VirtualMachine = struct {
     }
 
     fn configureDebugger(this: *VirtualMachine, debugger: bun.CLI.Command.Debugger) void {
-        const unix = bun.getenvZ("BUN_INSPECT") orelse "";
-        const set_breakpoint_on_first_line = unix.len > 0 and strings.endsWith(unix, "?break=1");
-        const wait_for_connection = set_breakpoint_on_first_line or (unix.len > 0 and strings.endsWith(unix, "?wait=1"));
+        const inspect_url = bun.getenvZ("BUN_INSPECT") orelse "";
+        const set_breakpoint_on_first_line = inspect_url.len > 0 and strings.endsWith(inspect_url, "?break=1");
+        const wait_for_connection = set_breakpoint_on_first_line or (inspect_url.len > 0 and strings.endsWith(inspect_url, "?wait=1"));
+        const is_unix_socket = strings.startsWith(inspect_url, "unix:") or strings.startsWith(inspect_url, "ws+unix:");
+        const protocol_seperator_index = strings.indexOf(inspect_url, "://");
+        const path_or_port = if (is_unix_socket) null else (if (protocol_seperator_index == null) inspect_url else inspect_url[(protocol_seperator_index.? + 3)..]);
 
         switch (debugger) {
             .unspecified => {
-                if (unix.len > 0) {
+                if (inspect_url.len > 0) {
                     this.debugger = Debugger{
-                        .path_or_port = null,
-                        .unix = unix,
+                        .path_or_port = path_or_port,
+                        .unix = if (is_unix_socket) inspect_url else "",
                         .wait_for_connection = wait_for_connection,
                         .set_breakpoint_on_first_line = set_breakpoint_on_first_line,
                     };
@@ -1721,8 +1724,8 @@ pub const VirtualMachine = struct {
             },
             .enable => {
                 this.debugger = Debugger{
-                    .path_or_port = debugger.enable.path_or_port,
-                    .unix = unix,
+                    .path_or_port = if (debugger.enable.path_or_port.len > 0) debugger.enable.path_or_port else path_or_port,
+                    .unix = if (is_unix_socket) inspect_url else "",
                     .wait_for_connection = wait_for_connection or debugger.enable.wait_for_connection,
                     .set_breakpoint_on_first_line = set_breakpoint_on_first_line or debugger.enable.set_breakpoint_on_first_line,
                 };
