@@ -1708,8 +1708,8 @@ pub const VirtualMachine = struct {
         const set_breakpoint_on_first_line = inspect_url.len > 0 and strings.endsWith(inspect_url, "?break=1");
         const wait_for_connection = set_breakpoint_on_first_line or (inspect_url.len > 0 and strings.endsWith(inspect_url, "?wait=1"));
         const is_unix_socket = strings.startsWith(inspect_url, "unix:") or strings.startsWith(inspect_url, "ws+unix:");
-        const protocol_seperator_index = strings.indexOf(inspect_url, "://");
-        const path_or_port = if (is_unix_socket) null else (if (protocol_seperator_index == null) inspect_url else inspect_url[(protocol_seperator_index.? + 3)..]);
+        const query_index = strings.indexOf(inspect_url, "?");
+        const path_or_port = if (is_unix_socket) null else (if (query_index == null) inspect_url else inspect_url[0..(query_index.?)]);
 
         switch (debugger) {
             .unspecified => {

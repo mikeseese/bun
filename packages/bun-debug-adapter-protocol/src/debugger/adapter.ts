@@ -9,6 +9,23 @@ import { Location, SourceMap } from "./sourcemap";
 import { EventEmitter } from "node:events";
 import { DebugSignal, randomUnixPath } from "./signal";
 import { type as getOSType } from "node:os";
+import { normalize as nodeNormalizePath } from "node:path";
+
+function normalizePath(path: string): string {
+  const nodeNormalizedPath = nodeNormalizePath(path).replace(/\\/g, "/");
+  if (isWindows()) {
+    return nodeNormalizedPath.toLowerCase();
+  }
+  return nodeNormalizedPath;
+}
+
+export function isWindows(): boolean {
+  return getOSType() === "Windows_NT";
+}
+
+export function isFilePath(value: string): boolean {
+  return value.startsWith("/") || /^[a-z]:[/\\]/i.test(value);
+}
 
 const capabilities: DAP.Capabilities = {
   supportsConfigurationDoneRequest: true,
@@ -494,7 +511,7 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
 
     let url: string;
 
-    if (getOSType() === "Windows_NT") {
+    if (isWindows()) {
       url = `ws://localhost:${DefaultWebSocketDebugPort}`;
     } else {
       url = `ws+unix://${randomUnixPath()}`;
@@ -1339,17 +1356,17 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
     // 1. If it has a `path`, the client retrieves the source from the file system.
     // 2. If it has a `sourceReference`, the client sends a `source` request.
     //    Moreover, the code is usually shown in a read-only editor.
-    const isUserCode = url.startsWith("/") || /^[a-z]:/i.test(url);
+    const isUserCode = isFilePath(url);
     const sourceMap = SourceMap(sourceMapURL);
     const name = sourceName(url);
     const presentationHint = sourcePresentationHint(url);
 
     if (isUserCode) {
       this.#addSource({
-        sourceId: url,
+        sourceId: normalizePath(url),
         scriptId,
         name,
-        path: url,
+        path: normalizePath(url),
         presentationHint,
         sourceMap,
       });
@@ -1619,7 +1636,7 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
 
     // If there are any pending requests for this source by its path,
     // resolve them now that the source has been loaded.
-    const resolves = this.#pendingSources.get(path);
+    const resolves = this.#pendingSources.get(normalizePath(path));
     if (resolves) {
       this.#pendingSources.delete(path);
       for (const resolve of resolves) {
@@ -1646,7 +1663,7 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
   }
 
   #getSourceIfPresent(sourceId: string | number): Source | undefined {
-    return this.#sources.get(sourceId);
+    return this.#sources.get(typeof sourceId === "string" && isFilePath(sourceId) ? normalizePath(sourceId) : sourceId);
   }
 
   async #getSource(sourceId: string | number): Promise<Source> {
@@ -1658,15 +1675,15 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
 
     // If the source does not have a path or is a builtin module,
     // it cannot be retrieved from the file system.
-    if (typeof sourceId === "number" || !sourceId.startsWith("/")) {
+    if (typeof sourceId === "number" || !isFilePath(sourceId)) {
       throw new Error(`Source not found: ${sourceId}`);
     }
 
     // If the source is not present, it may not have been loaded yet.
     // In that case, wait for it to be loaded.
-    let resolves = this.#pendingSources.get(sourceId);
+    let resolves = this.#pendingSources.get(normalizePath(sourceId));
     if (!resolves) {
-      this.#pendingSources.set(sourceId, (resolves = []));
+      this.#pendingSources.set(normalizePath(sourceId), (resolves = []));
     }
 
     return new Promise(resolve => {
@@ -1694,9 +1711,9 @@ export class DebugAdapter extends EventEmitter<DebugAdapterEventMap> implements 
     if (url) {
       return this.#addSource({
         scriptId,
-        sourceId: url,
+        sourceId: normalizePath(url),
         name: sourceName(url),
-        path: url,
+        path: normalizePath(url),
         sourceMap,
         presentationHint,
       });
@@ -2161,7 +2178,7 @@ function titleize(name: string): string {
 }
 
 function sourcePresentationHint(url?: string): DAP.Source["presentationHint"] {
-  if (!url || !url.startsWith("/")) {
+  if (!url || !isFilePath(url)) {
     return "deemphasize";
   }
   if (url.includes("/node_modules/")) {

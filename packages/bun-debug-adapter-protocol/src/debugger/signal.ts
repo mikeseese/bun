@@ -4,7 +4,7 @@ import type { Server } from "node:net";
 import { createServer } from "node:net";
 import { WebSocketServer } from "ws";
 import { EventEmitter } from "node:events";
-import { DefaultWebSocketDebugPort } from "./adapter";
+import { DefaultWebSocketDebugPort, isFilePath, isWindows } from "./adapter";
 
 const isDebug = process.env.NODE_ENV === "development";
 
@@ -101,7 +101,7 @@ export function randomUnixPath(): string {
 }
 
 function parseSignalPath(path: string | URL): string {
-  if (typeof path === "string" && path.startsWith("/")) {
+  if (typeof path === "string" && isFilePath(path)) {
     return path;
   }
   try {
@@ -113,8 +113,4 @@ function parseSignalPath(path: string | URL): string {
   } catch {
     throw new Error(`Invalid UNIX path: ${path}`);
   }
-}
-
-function isWindows(): boolean {
-  return getOSType() === "Windows_NT";
 }
